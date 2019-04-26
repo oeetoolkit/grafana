@@ -99,8 +99,7 @@ export async function getExploreUrl(
 }
 
 export function buildQueryTransaction(
-  query: DataQuery,
-  rowIndex: number,
+  queries: DataQuery[],
   resultType: ResultType,
   queryOptions: QueryOptions,
   range: TimeRange,
@@ -109,12 +108,11 @@ export function buildQueryTransaction(
 ): QueryTransaction {
   const { interval, intervalMs } = queryIntervals;
 
-  const configuredQueries = [
-    {
-      ...query,
-      ...queryOptions,
-    },
-  ];
+  const configuredQueries = queries.map(query => ({ ...query, ...queryOptions }));
+  const key = queries.reduce((combinedKey, query) => {
+    combinedKey += query.key;
+    return combinedKey;
+  }, '');
 
   // Clone range for query request
   // const queryRange: RawTimeRange = { ...range };
@@ -123,7 +121,7 @@ export function buildQueryTransaction(
   // Using `format` here because it relates to the view panel that the request is for.
   // However, some datasources don't use `panelId + query.refId`, but only `panelId`.
   // Therefore panel id has to be unique.
-  const panelId = `${queryOptions.format}-${query.key}`;
+  const panelId = `${queryOptions.format}-${key}`;
 
   const options = {
     interval,
@@ -140,10 +138,9 @@ export function buildQueryTransaction(
   };
 
   return {
+    queries,
     options,
-    query,
     resultType,
-    rowIndex,
     scanning,
     id: generateKey(), // reusing for unique ID
     done: false,
@@ -280,27 +277,19 @@ export function hasNonEmptyQuery<TQuery extends DataQuery = any>(queries: TQuery
 }
 
 export function calculateResultsFromQueryTransactions(
-  queryTransactions: QueryTransaction[],
+  result: any,
+  resultType: ResultType,
   datasource: any,
   graphInterval: number
 ) {
-  const graphResult = _.flatten(
-    queryTransactions.filter(qt => qt.resultType === 'Graph' && qt.done && qt.result).map(qt => qt.result)
-  );
-  const tableResult = mergeTablesIntoModel(
-    new TableModel(),
-    ...queryTransactions
-      .filter(qt => qt.resultType === 'Table' && qt.done && qt.result && qt.result.columns && qt.result.rows)
-      .map(qt => qt.result)
-  );
+  const graphResult = resultType === 'Graph' && result ? result : undefined;
+  const tableResult =
+    resultType === 'Table' && result && result.columns && result.rows
+      ? mergeTablesIntoModel(new TableModel(), result)
+      : mergeTablesIntoModel(new TableModel());
   const logsResult =
-    datasource && datasource.mergeStreams
-      ? datasource.mergeStreams(
-          _.flatten(
-            queryTransactions.filter(qt => qt.resultType === 'Logs' && qt.done && qt.result).map(qt => qt.result)
-          ),
-          graphInterval
-        )
+    resultType === 'Logs' && result && datasource && datasource.mergeStreams
+      ? datasource.mergeStreams(result, graphInterval)
       : undefined;
 
   return {
