@@ -11,7 +11,7 @@ import { makeSeriesForLogs } from 'app/core/logs_model';
 
 // Types
 import { LogsStream, LogsModel } from 'app/core/logs_model';
-import { PluginMeta, DataQueryRequest } from '@grafana/ui/src/types';
+import { PluginMeta, DataQueryRequest, DataQueryError } from '@grafana/ui/src/types';
 import { LokiQuery } from './types';
 
 export const DEFAULT_MAX_LINES = 1000;
@@ -60,16 +60,18 @@ export class LokiDatasource {
     return logs;
   }
 
-  prepareQueryTarget(target, options) {
+  prepareQueryTarget(target: LokiQuery, options: DataQueryRequest<LokiQuery>) {
     const interpolated = this.templateSrv.replace(target.expr);
     const start = this.getTime(options.range.from, false);
     const end = this.getTime(options.range.to, true);
+    const refId = target.refId;
     return {
       ...DEFAULT_QUERY_PARAMS,
       ...parseQuery(interpolated),
       start,
       end,
       limit: this.maxLines,
+      refId,
     };
   }
 
@@ -82,7 +84,35 @@ export class LokiDatasource {
       return Promise.resolve({ data: [] });
     }
 
-    const queries = queryTargets.map(target => this._request('/api/prom/query', target));
+    const queries = queryTargets.map(target =>
+      this._request('/api/prom/query', target).catch((err: any) => {
+        if (err.cancelled) {
+          return err;
+        }
+
+        const error: DataQueryError = {
+          message: 'Unknown error during query transaction. Please check JS console logs.',
+          refId: target.refId,
+        };
+
+        if (err.data) {
+          if (typeof err.data === 'string') {
+            error.message = err.data;
+          } else if (err.data.error) {
+            error.message = err.data.error;
+          }
+        } else if (err.message) {
+          error.message = err.message;
+        } else if (typeof err === 'string') {
+          error.message = err;
+        }
+
+        error.status = err.status;
+        error.statusText = err.statusText;
+
+        return Promise.reject(error);
+      })
+    );
 
     return Promise.all(queries).then((results: any[]) => {
       const allStreams: LogsStream[] = [];
