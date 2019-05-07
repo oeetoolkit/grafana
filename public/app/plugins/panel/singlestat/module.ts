@@ -14,9 +14,10 @@ import { GrafanaThemeType, getValueFormat, getColorFromHexRgbOrName, isTableData
 class SingleStatCtrl extends MetricsPanelCtrl {
   static templateUrl = 'module.html';
 
-  dataType = 'timeseries';
+  dataType = 'table';
   series: any[];
   data: any;
+  tableData: any[];
   fontSizes: any[];
   unitFormats: any[];
   invalidGaugeRange: boolean;
@@ -46,22 +47,22 @@ class SingleStatCtrl extends MetricsPanelCtrl {
     targets: [{}],
     cacheTimeout: null,
     format: 'none',
-    prefix: '',
-    postfix: '',
+    prefix: 'value_prefix',
+    postfix: 'value_postfix',
     nullText: null,
     valueMaps: [{ value: 'null', op: '=', text: 'N/A' }],
     mappingTypes: [{ name: 'value to text', value: 1 }, { name: 'range to text', value: 2 }],
     rangeMaps: [{ from: 'null', to: 'null', text: 'N/A' }],
     mappingType: 1,
     nullPointMode: 'connected',
-    valueName: 'avg',
-    prefixFontSize: '50%',
+    valueName: 'current',
+    prefixFontSize: '30%',
     valueFontSize: '80%',
-    postfixFontSize: '50%',
-    thresholds: '',
+    postfixFontSize: '30%',
+    thresholds: 'zone_thresholds',
     colorBackground: false,
-    colorValue: false,
-    colors: ['#299c46', 'rgba(237, 129, 40, 0.89)', '#d44a3a'],
+    colorValue: true,
+    colors: ['#e2011c', '#ffd600', '#009669'],
     sparkline: {
       show: false,
       full: false,
@@ -75,7 +76,7 @@ class SingleStatCtrl extends MetricsPanelCtrl {
       thresholdMarkers: true,
       thresholdLabels: false,
     },
-    tableColumn: '',
+    tableColumn: 'value',
   };
 
   /** @ngInject */
@@ -115,8 +116,8 @@ class SingleStatCtrl extends MetricsPanelCtrl {
 
     if (dataList.length > 0 && isTableData(dataList[0])) {
       this.dataType = 'table';
-      const tableData = dataList.map(this.tableHandler.bind(this));
-      this.setTableValues(tableData, data);
+      this.tableData = dataList.map(this.tableHandler.bind(this));
+      this.setTableValues(this.tableData, data);
     } else {
       this.dataType = 'timeseries';
       this.series = dataList.map(this.seriesHandler.bind(this));
@@ -371,7 +372,8 @@ class SingleStatCtrl extends MetricsPanelCtrl {
     const $sanitize = this.$sanitize;
     const panel = ctrl.panel;
     const templateSrv = this.templateSrv;
-    let data, linkInfo;
+
+    let tableData, data, linkInfo;
     const $panelContainer = elem.find('.panel-container');
     elem = elem.find('.singlestat-panel');
 
@@ -390,17 +392,62 @@ class SingleStatCtrl extends MetricsPanelCtrl {
       return '<span class="' + className + '" style="font-size:' + fontSize + '">' + value + '</span>';
     }
 
+    function GetPreFix() {
+      if (!tableData || tableData.length === 0) {
+        return panel.prefix;
+      }
+
+      if (tableData[0].length === 0 || tableData[0][0][panel.prefix] === undefined) {
+        return panel.prefix;
+      }
+
+      const datapoint = tableData[0][0];
+      const result = datapoint[panel.prefix];
+      return result ? result : '';
+    }
+
+    function GetPostFix() {
+      if (!tableData || tableData.length === 0) {
+        return panel.postfix;
+      }
+
+      if (tableData[0].length === 0 || tableData[0][0][panel.postfix] === undefined) {
+        return panel.postfix;
+      }
+
+      const datapoint = tableData[0][0];
+      const result = datapoint[panel.postfix];
+      return result ? result : '';
+    }
+
+    function GetThresholds() {
+      if (!tableData || tableData.length === 0) {
+        return panel.thresholds;
+      }
+
+      if (tableData[0].length === 0 || tableData[0][0][panel.thresholds] === undefined) {
+        return panel.thresholds;
+      }
+
+      const datapoint = tableData[0][0];
+      const result = datapoint[panel.thresholds];
+      return result ? result : '';
+    }
+
     function getBigValueHtml() {
       let body = '<div class="singlestat-panel-value-container">';
 
       if (panel.prefix) {
-        body += getSpan('singlestat-panel-prefix', panel.prefixFontSize, panel.colorPrefix, panel.prefix);
+        const prefix = GetPreFix();
+        body += getSpan('singlestat-panel-prefix', panel.prefixFontSize, panel.colorPrefix, prefix);
       }
 
-      body += getSpan('singlestat-panel-value', panel.valueFontSize, panel.colorValue, data.valueFormatted);
+      const value = data.valueFormatted;
+      body += getSpan('singlestat-panel-value', panel.valueFontSize, panel.colorValue, value);
 
       if (panel.postfix) {
-        body += getSpan('singlestat-panel-postfix', panel.postfixFontSize, panel.colorPostfix, panel.postfix);
+        const postfix = GetPostFix();
+        body += getSpan('singlestat-panel-postfix', panel.postfixFontSize, panel.colorPostfix, postfix);
       }
 
       body += '</div>';
@@ -409,9 +456,12 @@ class SingleStatCtrl extends MetricsPanelCtrl {
     }
 
     function getValueText() {
-      let result = panel.prefix ? templateSrv.replace(panel.prefix, data.scopedVars) : '';
+      const prefix = GetPreFix();
+      let result = prefix ? templateSrv.replace(prefix, data.scopedVars) : '';
       result += data.valueFormatted;
-      result += panel.postfix ? templateSrv.replace(panel.postfix, data.scopedVars) : '';
+
+      const postfix = GetPostFix();
+      result += postfix ? templateSrv.replace(postfix, data.scopedVars) : '';
 
       return result;
     }
@@ -575,12 +625,16 @@ class SingleStatCtrl extends MetricsPanelCtrl {
       if (!ctrl.data) {
         return;
       }
+
       data = ctrl.data;
+      tableData = ctrl.tableData;
 
       // get thresholds
-      data.thresholds = panel.thresholds.split(',').map(strVale => {
-        return Number(strVale.trim());
-      });
+      data.thresholds = GetThresholds()
+        .split(',')
+        .map(strVale => {
+          return Number(strVale.trim());
+        });
 
       // Map panel colors to hex or rgb/a values
       data.colorMap = panel.colors.map(color =>

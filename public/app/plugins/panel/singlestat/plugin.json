@@ -1,15 +1,15 @@
 {
   "type": "panel",
-  "name": "Singlestat",
+  "name": "Fullfact KPI Panel",
   "id": "singlestat",
 
   "dataFormats": ["time_series", "table"],
 
   "info": {
-    "description": "Singlestat Panel for Grafana",
+    "description": "Fullfact KPI Panel based on Grafana singlestat",
     "author": {
-      "name": "Grafana Project",
-      "url": "https://grafana.com"
+      "name": "Fullfact and Grafana Project",
+      "url": "https://fullfact.com https://grafana.com "
     },
     "logos": {
       "small": "img/icn-singlestat-panel.svg",
